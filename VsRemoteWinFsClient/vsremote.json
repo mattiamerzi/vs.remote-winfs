@@ -1,0 +1,43 @@
+﻿{
+  "Folders": [
+    {
+      "Label": "SubFolder1",
+      "Folders": [],
+      "Sites": [
+        {
+          "Label": "Test Environment",
+          "Address": "http://192.168.0.187:55555",
+          "MountPoint": "X:\\"
+        },
+        {
+          "Label": "Site2",
+          "Address": "http://example.org",
+          "MountPoint": "Y:\\"
+        }
+      ]
+    },
+    {
+      "Label": "SubFolder2",
+      "Folders": [
+        {
+          "Label": "NestedFolder",
+          "Folders": [],
+          "Sites": [
+            {
+              "Label": "NestedSite",
+              "Address": "http://nested.example.net",
+              "MountPoint": "Z:\\"
+            }
+          ]
+        }
+      ],
+      "Sites": []
+    }
+  ],
+  "Sites": [
+    {
+      "Label": "RootSite",
+      "Address": "http://root.example.com"
+    }
+  ]
+}
