@@ -33,7 +33,7 @@ internal class VsRemoteFSManager : IDisposable
             DokanInstance? dokanInstance = null;
             try
             {
-                var fs = new VsRemoteFS(site.Address, dynaLogger);
+                var fs = new VsRemoteFS(new VsRemoteFSOptions(site.Address, Logger: dynaLogger));
                 var dokanBuilder = new DokanInstanceBuilder(_dokan)
                     .ConfigureLogger(() => new NullLogger())
                     .ConfigureOptions(options =>

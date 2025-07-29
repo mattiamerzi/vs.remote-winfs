@@ -26,8 +26,8 @@ public class VsRemoteFS : IDokanOperations
                                                FileAccess.Delete |
                                                FileAccess.GenericWrite;
 
-    GrpcChannel channel;
-    VsRemoteClient vsremote;
+    private readonly GrpcChannel channel;
+    private readonly VsRemoteClient vsremote;
     private readonly ILogger log;
 
     const long MAX_CACHE_AGE = 5000;
@@ -38,17 +38,18 @@ public class VsRemoteFS : IDokanOperations
     }
     private readonly Dictionary<string, StatCacheEntry> StatCache = new();
 
-    public VsRemoteFS(string uri, ILogger logger)
+    public VsRemoteFS(VsRemoteFSOptions options)
     {
-        log = logger;
-        channel = GrpcChannel.ForAddress(uri);
-        vsremote = new VsRemoteClient(channel);
-    }
-    public VsRemoteFS(string uri, string username, string password, ILogger logger)
-    {
-        log = logger;
-        channel = GrpcChannel.ForAddress(uri);
-        vsremote = new VsRemoteAuthenticatedClient(channel, username, password);
+        log = options.Logger ?? new NullLogger();
+        channel = GrpcChannel.ForAddress(options.Uri);
+        if (options.UserName == null)
+        {
+            vsremote = new VsRemoteClient(channel);
+        }
+        else
+        {
+            vsremote = new VsRemoteAuthenticatedClient(channel, options.UserName, options.Password ?? string.Empty);
+        }
     }
 
     private static NtStatus DecodeNtStatus(RpcException rpcex)
@@ -71,7 +72,6 @@ public class VsRemoteFS : IDokanOperations
 
     private StatResponse Stat(StatRequest statRequest)
     {
-        //return vsremote.Stat(statRequest);
         var curt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         if (StatCache.TryGetValue(statRequest.Path, out var cachedStat))
             if ((curt - cachedStat.Age) < MAX_CACHE_AGE)
@@ -255,18 +255,25 @@ public class VsRemoteFS : IDokanOperations
     {
         Trace(nameof(Cleanup), fileName, info);
         fileName = AdjustFilename(fileName);
-        if (info.DeleteOnClose)
+        try
         {
-            if (info.IsDirectory)
+            if (info.DeletePending)
             {
-                vsremote.RemoveDirectory(new RemoveDirectoryRequest() { Path = fileName, Recursive = false });
-                UnStat(fileName);
+                if (info.IsDirectory)
+                {
+                    vsremote.RemoveDirectory(new RemoveDirectoryRequest() { Path = fileName, Recursive = false });
+                    UnStat(fileName);
+                }
+                else
+                {
+                    vsremote.DeleteFile(new DeleteFileRequest() { Path = fileName });
+                    UnStat(fileName);
+                }
             }
-            else
-            {
-                vsremote.DeleteFile(new DeleteFileRequest() { Path = fileName });
-                UnStat(fileName);
-            }
+        }
+        catch
+        {
+            // errors during cleanup are ignored -- usually, NotFound
         }
     }
 
@@ -446,16 +453,35 @@ public class VsRemoteFS : IDokanOperations
         return DokanResult.Success;
     }
 
-    public NtStatus GetFileSecurity(string fileName, out FileSystemSecurity security, AccessControlSections sections, IDokanFileInfo info)
+    public NtStatus GetFileSecurity(string fileName, out FileSystemSecurity? security, AccessControlSections sections, IDokanFileInfo info)
     {
         fileName = AdjustFilename(fileName);
-        var fileExists = FileExists(fileName, out bool isDirectory, out VsFsEntry? fileInfo);
-        if (fileExists && isDirectory)
+        var fileExists = FileExists(fileName, out bool isDirectory, out _);
+        try
         {
-            security = new DirectorySecurity(fileName, AccessControlSections.None);
+            if (fileExists && isDirectory)
+            {
+                security = new DirectorySecurity(fileName, AccessControlSections.None);
+            }
+            else
+            {
+                if (fileExists)
+                {
+                    security = new FileSecurity(fileName, AccessControlSections.None);
+                }
+                else
+                {
+                    security = null; // how can it not be null?!
+                    return DokanResult.FileNotFound;
+                }
+            }
         }
-        security = new FileSecurity(fileName, AccessControlSections.None);
-        return fileExists ? DokanResult.Success : DokanResult.FileNotFound;
+        catch (UnauthorizedAccessException uae)
+        {
+            security = null!;
+            return DokanResult.AccessDenied;
+        }
+        return DokanResult.Success;
     }
 
     public NtStatus SetFileSecurity(string fileName, FileSystemSecurity security, AccessControlSections sections, IDokanFileInfo info)

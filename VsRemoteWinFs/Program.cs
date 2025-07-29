@@ -31,7 +31,7 @@ internal class Program
             using (var consoleLogger = new ConsoleLogger("[VsRemote] "))
             using (var dokan = new Dokan(dokanLogger))
             {
-                var mirror = new VsRemoteFS(vsRemoteUri, consoleLogger);
+                var mirror = new VsRemoteFS(new VsRemoteFSOptions(vsRemoteUri, Logger: consoleLogger));
 
                 var dokanBuilder = new DokanInstanceBuilder(dokan)
                     .ConfigureLogger(() => dokanLogger)
